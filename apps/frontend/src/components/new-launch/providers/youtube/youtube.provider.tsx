@@ -38,6 +38,34 @@ const madeForKids = [
     value: 'yes',
   },
 ];
+
+const languages = [
+  { label: 'Russian', value: 'ru' },
+  { label: 'English', value: 'en' },
+  { label: 'Ukrainian', value: 'uk' },
+  { label: 'German', value: 'de' },
+  { label: 'Spanish', value: 'es' },
+  { label: 'French', value: 'fr' },
+];
+
+// the categories YouTube lets a video be assigned to
+const categories = [
+  { label: 'Film & Animation', value: '1' },
+  { label: 'Autos & Vehicles', value: '2' },
+  { label: 'Music', value: '10' },
+  { label: 'Pets & Animals', value: '15' },
+  { label: 'Sports', value: '17' },
+  { label: 'Travel & Events', value: '19' },
+  { label: 'Gaming', value: '20' },
+  { label: 'People & Blogs', value: '22' },
+  { label: 'Comedy', value: '23' },
+  { label: 'Entertainment', value: '24' },
+  { label: 'News & Politics', value: '25' },
+  { label: 'Howto & Style', value: '26' },
+  { label: 'Education', value: '27' },
+  { label: 'Science & Technology', value: '28' },
+  { label: 'Nonprofits & Activism', value: '29' },
+];
 const YoutubeSettings: FC = () => {
   const t = useT();
   const { register, control, setValue } = useSettings();
@@ -66,6 +94,30 @@ const YoutubeSettings: FC = () => {
         })}
       >
         {madeForKids.map((t) => (
+          <option key={t.value} value={t.value}>
+            {t.label}
+          </option>
+        ))}
+      </Select>
+      <Select
+        label="Language"
+        {...register('language', {
+          value: 'ru',
+        })}
+      >
+        {languages.map((t) => (
+          <option key={t.value} value={t.value}>
+            {t.label}
+          </option>
+        ))}
+      </Select>
+      <Select
+        label="Category"
+        {...register('categoryId', {
+          value: '27',
+        })}
+      >
+        {categories.map((t) => (
           <option key={t.value} value={t.value}>
             {t.label}
           </option>

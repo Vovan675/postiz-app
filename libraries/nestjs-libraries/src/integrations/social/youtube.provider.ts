@@ -608,6 +608,13 @@ export class YoutubeProvider extends SocialAbstract implements SocialProvider {
           snippet: {
             title: settings.title,
             description: firstPost?.message,
+            ...(settings?.language
+              ? {
+                  defaultLanguage: settings.language,
+                  defaultAudioLanguage: settings.language,
+                }
+              : {}),
+            ...(settings?.categoryId ? { categoryId: settings.categoryId } : {}),
             ...(settings?.tags?.length
               ? { tags: settings.tags.map((p) => p.label) }
               : {}),

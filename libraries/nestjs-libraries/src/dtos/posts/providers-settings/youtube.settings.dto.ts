@@ -78,6 +78,14 @@ export class YoutubeSettingsDto {
   @IsOptional()
   selfDeclaredMadeForKids: 'no' | 'yes';
 
+  @IsString()
+  @IsOptional()
+  language?: string;
+
+  @IsString()
+  @IsOptional()
+  categoryId?: string;
+
   @IsOptional()
   @ValidateNested()
   @Type(() => MediaDto)
