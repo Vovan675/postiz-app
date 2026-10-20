@@ -407,6 +407,22 @@ export const MediaComponentInner: FC<{
                       ? 'Edit Thumbnail'
                       : 'Create Thumbnail'}
                   </button>
+                  <label className="bg-third text-textColor px-6 py-2 rounded-lg hover:bg-opacity-80 transition-all flex-1 border border-tableBorder text-center cursor-pointer">
+                    Upload Image
+                    <input
+                      type="file"
+                      accept="image/jpeg"
+                      className="hidden"
+                      disabled={loading}
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          setNewThumbnail(URL.createObjectURL(file));
+                          setThumbnailTimestamp(null);
+                        }
+                      }}
+                    />
+                  </label>
                   {(thumbnail || newThumbnail) && (
                     <button
                       disabled={loading}
