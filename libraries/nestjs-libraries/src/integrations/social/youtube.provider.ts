@@ -1105,4 +1105,83 @@ export class YoutubeProvider extends SocialAbstract implements SocialProvider {
       return [];
     }
   }
+
+  // Tag stats for the settings tag picker: YouTube autocomplete (free) tells
+  // whether people search the tag, the top 10 search results tell how much
+  // traffic it gets and which tags the ranking videos use. Every tag costs one
+  // search.list call from its own 100/day bucket, so it only runs on demand.
+  async tagStats(
+    accessToken: string,
+    data: { tags: string[]; language?: string }
+  ) {
+    const { client, youtube } = clientAndYoutube();
+    client.setCredentials({ access_token: accessToken });
+    const youtubeClient = youtube(client);
+    const language = data?.language || 'en';
+
+    try {
+      return await Promise.all(
+        (data?.tags || []).slice(0, 30).map(async (tag) => {
+          const [autocomplete, search] = await Promise.all([
+            fetch(
+              `https://suggestqueries.google.com/complete/search?client=firefox&ds=yt&hl=${language}&q=${encodeURIComponent(
+                tag
+              )}`
+            )
+              .then((res) => res.json())
+              .then((res) => (res?.[1] || []) as string[])
+              .catch(() => [] as string[]),
+            youtubeClient.search.list({
+              part: ['id'],
+              q: tag,
+              type: ['video'],
+              maxResults: 10,
+              relevanceLanguage: language,
+            }),
+          ]);
+
+          const ids = (search.data.items || [])
+            .map((p) => p.id?.videoId)
+            .filter((p): p is string => !!p);
+          const videos = ids.length
+            ? (
+                await youtubeClient.videos.list({
+                  part: ['statistics', 'snippet'],
+                  id: ids,
+                })
+              ).data.items || []
+            : [];
+
+          const lower = tag.toLowerCase();
+          const views = videos
+            .map((p) => Number(p.statistics?.viewCount || 0))
+            .sort((a, b) => a - b);
+
+          return {
+            tag,
+            // -1 when people don't search the tag as a whole
+            searchRank: autocomplete.findIndex((p) => p.toLowerCase() === lower),
+            autocomplete,
+            medianViews: views.length ? views[Math.floor(views.length / 2)] : 0,
+            topCount: videos.length,
+            topUsing: videos.filter(
+              (p) =>
+                (p.snippet?.tags || []).some((t) => t.toLowerCase() === lower) ||
+                (p.snippet?.title || '').toLowerCase().includes(lower)
+            ).length,
+            topTags: videos.flatMap((p) => p.snippet?.tags || []),
+          };
+        })
+      );
+    } catch (err: any) {
+      if (err?.response?.status === 401) {
+        throw new RefreshToken(
+          this.identifier,
+          JSON.stringify(err.response.data || {}),
+          '{}'
+        );
+      }
+      throw err;
+    }
+  }
 }

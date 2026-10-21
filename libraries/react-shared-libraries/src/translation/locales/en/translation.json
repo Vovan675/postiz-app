@@ -897,5 +897,13 @@
   "thumbnails_and_alt_text": "Thumbnails & alt text",
   "media_settings_section_description": "Click a media item to set its alt text, or its thumbnail if it is a video.",
   "media_settings_section_tooltip": "Thumbnails apply to videos in the main post. YouTube may ignore custom thumbnails on videos it treats as Shorts (vertical, up to 3 minutes) without failing the publish.",
-  "youtube_thumbnail_overrides_media": "This post has a YouTube-specific thumbnail, which overrides the thumbnail set in the media settings."
+  "youtube_thumbnail_overrides_media": "This post has a YouTube-specific thumbnail, which overrides the thumbnail set in the media settings.",
+  "tag": "Tag",
+  "searched": "Searched",
+  "add_tags_comma_separated": "Add tags, separated by commas",
+  "analyze_tags": "Analyze tags",
+  "top_median_views": "Top-10 median views",
+  "used_by_top": "Used by top videos",
+  "related_tags": "Used by top videos and searched on YouTube, click to add",
+  "youtube_tag_stats_failed": "Could not load tag stats, the daily YouTube search quota may be used up"
 }
