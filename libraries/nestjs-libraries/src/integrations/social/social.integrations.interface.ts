@@ -69,8 +69,19 @@ export interface IAuthenticator {
 
 export interface AnalyticsData {
   label: string;
-  data: Array<{ total: string; date: string }>;
+  data: Array<{ total: string | number; date: string }>;
   percentageChange: number;
+  // averaged instead of summed over the range
+  average?: boolean;
+  // how the value reads: 'duration' is in seconds
+  format?: 'percent' | 'duration';
+  // the value for the whole range, when summing/averaging the days is wrong
+  total?: number;
+  // ranked rows (top videos, traffic sources...), shown as a list instead of a
+  // chart; `format` applies to their totals
+  top?: Array<{ title: string; url?: string; total: number }>;
+  // section the card is shown under
+  group?: string;
 }
 
 

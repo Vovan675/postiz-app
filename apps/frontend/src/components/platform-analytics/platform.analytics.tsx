@@ -287,6 +287,7 @@ export const PlatformAnalytics = () => {
                 name="date"
                 disableForm={true}
                 hideErrors={true}
+                value={keys}
                 onChange={(e) => setKey(+e.target.value)}
               >
                 {options.map((option) => (

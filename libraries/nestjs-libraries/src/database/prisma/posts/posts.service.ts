@@ -522,12 +522,15 @@ export class PostsService {
               // the normalizer may have replaced the file after the post was
               // composed; a record still processing publishes the original
               const fresh = await this._mediaService.getMediaById(p.id);
+              // a thumbnail set after the channel was customized only lands on
+              // the media record, not on the channel's copy of the media
+              const thumbnail = p.thumbnail || fresh?.thumbnail || undefined;
               if (fresh?.status === 'ready' && fresh.path !== p.path) {
                 imageUpdateNeeded = true;
-                return { ...p, name: fresh.name, path: fresh.path };
+                return { ...p, thumbnail, name: fresh.name, path: fresh.path };
               }
 
-              return p;
+              return { ...p, thumbnail };
             })
           )
         )

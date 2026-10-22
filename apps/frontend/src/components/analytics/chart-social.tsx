@@ -6,25 +6,34 @@ import { TotalList } from '@gitroom/frontend/components/analytics/stars.and.fork
 import { chunk } from 'lodash';
 import useCookie from 'react-use-cookie';
 
-function mergeDataPoints(data: TotalList[], numPoints: number): TotalList[] {
+function mergeDataPoints(
+  data: TotalList[],
+  numPoints: number,
+  average?: boolean
+): TotalList[] {
   const res = chunk(data, Math.ceil(data.length / numPoints));
   return res.map((row) => {
     return {
       date: `${row[0].date} - ${row?.at(-1)?.date}`,
-      total: row.reduce((acc, curr) => acc + curr.total, 0),
+      // percentages and durations are averaged, adding them up means nothing
+      total:
+        row.reduce((acc, curr) => acc + Number(curr.total), 0) /
+        (average ? row.length : 1),
     };
   });
 }
 
 export const ChartSocial: FC<{
-  data: TotalList[];
+  data: Array<{ total: number | string; date: string }>;
   color?: 'purple' | 'green' | 'blue';
+  average?: boolean;
 }> = (props) => {
-  const { data, color = 'purple' } = props;
+  const { color = 'purple', average } = props;
+  const data = props.data as TotalList[];
   const [mode] = useCookie('mode', 'dark');
 
   const list = useMemo(() => {
-    const merged = data.length < 7 ? data : mergeDataPoints(data, 7);
+    const merged = data.length < 30 ? data : mergeDataPoints(data, 30, average);
     if (merged.length === 1) {
       return [
         // duplicating single datapoints metrics for chart to display a line on analytics
@@ -132,7 +141,7 @@ export const ChartSocial: FC<{
             label: 'Total',
             backgroundColor: gradient,
             fill: true,
-            data: list.map((row) => row.total),
+            data: list.map((row) => Number(row.total)),
             tension: 0.4,
             pointRadius: 0,
             pointHoverRadius: 6,

@@ -1148,8 +1148,17 @@ export class InstagramProvider
         return 'Reach';
       }
 
+      // follower_count is the daily new followers, not the total
       case 'follower_count': {
-        return 'Follower Count';
+        return 'New Followers';
+      }
+
+      case 'accounts_engaged': {
+        return 'Accounts Engaged';
+      }
+
+      case 'total_interactions': {
+        return 'Interactions';
       }
 
       case 'views': {
@@ -1194,15 +1203,38 @@ export class InstagramProvider
 
     const { data: data2, ...all2 } = await (
       await fetch(
-        `https://${type}/${META_GRAPH_API_VERSION}/${id}/insights?metric_type=total_value&metric=likes,views,comments,shares,saves,replies&access_token=${accessToken}&period=day&since=${since}&until=${until}`
+        `https://${type}/${META_GRAPH_API_VERSION}/${id}/insights?metric_type=total_value&metric=views,accounts_engaged,total_interactions,likes,comments,shares,saves,replies&access_token=${accessToken}&period=day&since=${since}&until=${until}`
       )
     ).json();
-    const analytics = [];
+
+    const profile = await (
+      await fetch(
+        `https://${type}/${META_GRAPH_API_VERSION}/${id}?fields=followers_count,media_count&access_token=${accessToken}`
+      )
+    ).json();
+
+    const analytics: AnalyticsData[] = [];
+
+    for (const [field, label] of [
+      ['followers_count', 'Followers'],
+      ['media_count', 'Posts'],
+    ]) {
+      if (profile?.[field] !== undefined) {
+        analytics.push({
+          label,
+          group: 'Account',
+          percentageChange: 0,
+          total: Number(profile[field]),
+          data: [],
+        });
+      }
+    }
 
     analytics.push(
       ...(data?.map((d: any) => ({
         label: this.setTitle(d.name),
-        percentageChange: 5,
+        group: 'Daily',
+        percentageChange: 0,
         data: d.values.map((v: any) => ({
           total: v.value,
           date: dayjs(v.end_time).format('YYYY-MM-DD'),
@@ -1211,16 +1243,13 @@ export class InstagramProvider
     );
 
     analytics.push(
-      ...data2.map((d: any) => ({
+      ...(data2?.map((d: any) => ({
         label: this.setTitle(d.name),
-        percentageChange: 5,
-        data: [
-          {
-            total: d.total_value.value,
-            date: dayjs().format('YYYY-MM-DD'),
-          },
-        ],
-      }))
+        group: 'Period Totals',
+        percentageChange: 0,
+        total: Number(d.total_value?.value || 0),
+        data: [],
+      })) || [])
     );
 
     return analytics;
@@ -1283,6 +1312,31 @@ export class InstagramProvider
     }));
   }
 
+  // Video length in seconds from the mp4 header (mvhd box), which a fast-start
+  // file like the ones Instagram serves keeps in its first bytes
+  private async mp4Length(url: string) {
+    const buffer = Buffer.from(
+      await (
+        await fetch(url, { headers: { Range: 'bytes=0-65535' } })
+      ).arrayBuffer()
+    );
+    const at = buffer.indexOf('mvhd');
+    if (at === -1) {
+      return 0;
+    }
+
+    // version + flags, then creation and modification times (4 or 8 bytes)
+    const version = buffer[at + 4];
+    const offset = at + 8 + (version === 1 ? 16 : 8);
+    const timescale = buffer.readUInt32BE(offset);
+    const duration =
+      version === 1
+        ? Number(buffer.readBigUInt64BE(offset + 4))
+        : buffer.readUInt32BE(offset + 4);
+
+    return timescale ? duration / timescale : 0;
+  }
+
   async postAnalytics(
     integrationId: string,
     token: string,
@@ -1291,62 +1345,139 @@ export class InstagramProvider
     type = 'graph.facebook.com'
   ): Promise<AnalyticsData[]> {
     const [accessToken, userToken] = token.split('___');
-    const today = dayjs().format('YYYY-MM-DD');
 
     try {
-      // Fetch media insights from Instagram Graph API
-      const { data } = await (
+      const media = await (
         await fetch(
-          `https://${type}/${META_GRAPH_API_VERSION}/${postId}/insights?metric=views,reach,saved,likes,comments,shares&access_token=${accessToken}`
+          `https://${type}/${META_GRAPH_API_VERSION}/${postId}?fields=media_product_type,media_url&access_token=${accessToken}`
         )
       ).json();
+      const reels = media?.media_product_type === 'REELS';
 
-      if (!data || data.length === 0) {
-        return [];
-      }
+      // asking a metric the media type doesn't support fails the whole call
+      const metrics = reels
+        ? 'views,reach,likes,comments,shares,saved,total_interactions,ig_reels_avg_watch_time,ig_reels_video_view_total_time'
+        : media?.media_product_type === 'STORY'
+        ? 'views,reach,replies,shares,total_interactions,follows,profile_visits'
+        : 'views,reach,likes,comments,shares,saved,total_interactions,follows,profile_visits';
+      // newer metrics not every account has yet, asked again without them
+      const newer = reels ? ',reposts,reels_skip_rate' : ',reposts';
 
-      const result: AnalyticsData[] = [];
+      const insights = async (list: string) =>
+        (
+          await (
+            await fetch(
+              `https://${type}/${META_GRAPH_API_VERSION}/${postId}/insights?metric=${list}&access_token=${accessToken}`
+            )
+          ).json()
+        )?.data as any[] | undefined;
 
-      for (const metric of data) {
-        const value = metric.values?.[0]?.value;
-        if (value === undefined) continue;
+      const data =
+        (await insights(metrics + newer)) || (await insights(metrics)) || [];
+      const value: Record<string, number> = Object.fromEntries(
+        data
+          .filter((p) => p.values?.[0]?.value !== undefined)
+          .map((p) => [p.name, Number(p.values[0].value)])
+      );
 
-        let label = '';
+      // [metric, label, group, divisor, format]: watch times come in ms
+      const list: Array<
+        [string, string, string, number?, AnalyticsData['format']?]
+      > = [
+        ['views', 'Views', 'Overview'],
+        ['reach', 'Accounts Reached', 'Overview'],
+        ['ig_reels_avg_watch_time', 'Average Watch Time', 'Overview', 1000, 'duration'],
+        ['ig_reels_video_view_total_time', 'Watch Time (minutes)', 'Overview', 60000],
+        ['follows', 'Follows', 'Overview'],
+        ['profile_visits', 'Profile Visits', 'Overview'],
+        ['likes', 'Likes', 'Engagement'],
+        ['comments', 'Comments', 'Engagement'],
+        ['shares', 'Shares', 'Engagement'],
+        ['saved', 'Saves', 'Engagement'],
+        ['reposts', 'Reposts', 'Engagement'],
+        ['replies', 'Replies', 'Engagement'],
+        ['total_interactions', 'Interactions', 'Engagement'],
+      ];
 
-        switch (metric.name) {
-          case 'views':
-            label = 'Views';
-            break;
-          case 'reach':
-            label = 'Reach';
-            break;
-          case 'engagement':
-            label = 'Engagement';
-            break;
-          case 'saved':
-            label = 'Saves';
-            break;
-          case 'likes':
-            label = 'Likes';
-            break;
-          case 'comments':
-            label = 'Comments';
-            break;
-          case 'shares':
-            label = 'Shares';
-            break;
-        }
+      const cards: AnalyticsData[] = list
+        .filter(([metric]) => metric in value)
+        .map(([metric, label, group, divisor = 1, format]) => ({
+          label,
+          group,
+          format,
+          percentageChange: 0,
+          total: value[metric] / divisor,
+          data: [],
+        }));
 
-        if (label) {
-          result.push({
-            label,
+      // Instagram gives no video length, the file itself does
+      const length =
+        reels && media?.media_url
+          ? await this.mp4Length(media.media_url).catch(() => 0)
+          : 0;
+      if (length && value.ig_reels_avg_watch_time) {
+        cards.splice(
+          cards.findIndex((p) => p.label === 'Average Watch Time') + 1,
+          0,
+          {
+            label: 'Average View Percentage',
+            group: 'Overview',
+            format: 'percent',
             percentageChange: 0,
-            data: [{ total: String(value), date: today }],
-          });
-        }
+            total: value.ig_reels_avg_watch_time / 10 / length,
+            data: [],
+          },
+          {
+            label: 'Video Length',
+            group: 'Overview',
+            format: 'duration',
+            percentageChange: 0,
+            total: length,
+            data: [],
+          }
+        );
       }
 
-      return result;
+      // the rates the Instagram app shows, out of the accounts reached
+      const rates: Array<{ title: string; total: number }> = (
+        [
+          ['likes', 'Like rate'],
+          ['saved', 'Save rate'],
+          ['shares', 'Share rate'],
+          ['comments', 'Comment rate'],
+          ['reposts', 'Repost rate'],
+        ] as const
+      )
+        .filter(([metric]) => value.reach && metric in value)
+        .map(([metric, title]) => ({
+          title,
+          total: (value[metric] / value.reach) * 100,
+        }));
+
+      if ('reels_skip_rate' in value) {
+        rates.unshift({
+          title: 'Skipped in the first 3 seconds',
+          // ponytail: documented as a percentage without a scale, a real skip
+          // rate is never under 1%, so a 0-1 value is taken as a fraction
+          total:
+            value.reels_skip_rate <= 1
+              ? value.reels_skip_rate * 100
+              : value.reels_skip_rate,
+        });
+      }
+
+      if (rates.length) {
+        cards.push({
+          label: 'Rates',
+          group: 'Engagement',
+          format: 'percent',
+          percentageChange: 0,
+          data: [],
+          top: rates,
+        });
+      }
+
+      return cards;
     } catch (err) {
       console.error('Error fetching Instagram post analytics:', err);
       return [];

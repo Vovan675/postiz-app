@@ -1,4 +1,4 @@
-import { FC, useCallback, useMemo, useState } from 'react';
+import { FC, useCallback, useState } from 'react';
 import { Integration } from '@prisma/client';
 import useSWR from 'swr';
 import { useFetch } from '@gitroom/helpers/utils/custom.fetch';
@@ -6,12 +6,37 @@ import { ChartSocial } from '@gitroom/frontend/components/analytics/chart-social
 import { LoadingComponent } from '@gitroom/frontend/components/layout/loading';
 import { useT } from '@gitroom/react/translation/get.transation.service.client';
 
-interface AnalyticsDataItem {
+export interface AnalyticsDataItem {
   label: string;
-  data: Array<{ total: number; date: string }>;
+  data: Array<{ total: number | string; date: string }>;
   average?: boolean;
+  format?: 'percent' | 'duration';
+  total?: number;
+  top?: Array<{ title: string; url?: string; total: number }>;
   percentageChange?: number;
+  group?: string;
 }
+
+const formatValue = (value: number, format?: AnalyticsDataItem['format']) => {
+  if (format === 'duration') {
+    const seconds = Math.round(value);
+    return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
+  }
+
+  if (format === 'percent') {
+    return value.toFixed(1) + '%';
+  }
+
+  return new Intl.NumberFormat().format(Math.round(value));
+};
+
+const formatTotal = (item: AnalyticsDataItem) => {
+  const sum = item.data.reduce((acc, curr) => acc + Number(curr.total || 0), 0);
+  const value =
+    item.total ?? (item.average ? sum / (item.data.length || 1) : sum);
+
+  return formatValue(value, item.format || (item.average ? 'percent' : undefined));
+};
 
 const TrendIndicator: FC<{ value: number; average?: boolean }> = ({
   value,
@@ -48,75 +73,133 @@ const TrendIndicator: FC<{ value: number; average?: boolean }> = ({
   );
 };
 
-const AnalyticsCard: FC<{
-  item: AnalyticsDataItem;
-  total: string | number;
-  index: number;
-}> = ({ item, total, index }) => {
+const cardClass =
+  'flex flex-col bg-newTableHeader border border-newTableBorder rounded-[12px] overflow-hidden';
+
+// a lone number: no chart, a single point draws a flat line that says nothing
+const StatTile: FC<{ item: AnalyticsDataItem }> = ({ item }) => (
+  <div className={`${cardClass} gap-[6px] px-[16px] py-[14px]`}>
+    <span className="text-[13px] text-newTableText truncate" title={item.label}>
+      {item.label}
+    </span>
+    <span className="text-[26px] leading-[32px] font-semibold tracking-tight">
+      {formatTotal(item)}
+    </span>
+  </div>
+);
+
+const ChartCard: FC<{ item: AnalyticsDataItem; index: number }> = ({
+  item,
+  index,
+}) => {
   const colorVariants = ['purple', 'green', 'blue'] as const;
   const color = colorVariants[index % colorVariants.length];
 
-  const hasDataPoints = item.data.length >= 1;
-
   return (
-    <div className="group relative">
-      <div
-        className={`
-          flex flex-col h-full
-          bg-newTableHeader
-          border border-newTableBorder
-          rounded-[12px]
-          overflow-hidden
-          transition-all duration-200
-          hover:border-[#612bd3]/50
-        `}
-      >
-        {/* Header */}
-        <div className="flex items-center justify-between px-[16px] pt-[14px] pb-[8px]">
-          <div className="flex items-center gap-[10px]">
-            <div
-              className={`
-                w-[8px] h-[8px] rounded-full
-                ${color === 'purple' ? 'bg-[#612bd3]' : ''}
-                ${color === 'green' ? 'bg-[#32d583]' : ''}
-                ${color === 'blue' ? 'bg-[#1d9bf0]' : ''}
-              `}
-            />
-            <span className="text-[15px] font-medium text-newTableText">
-              {item.label}
-            </span>
-          </div>
-          {item.percentageChange !== undefined && (
-            <TrendIndicator value={item.percentageChange} average={item.average} />
-          )}
-        </div>
-
-        {/* Content */}
-        {hasDataPoints ? (
-          <>
-            {/* Chart */}
-            <div className="flex-1 px-[12px] py-[8px]">
-              <div className="h-[120px] relative">
-                <ChartSocial data={item.data} color={color} key={`chart-${index}`} />
-              </div>
-            </div>
-
-            {/* Value */}
-            <div className="px-[16px] pb-[14px]">
-              <div className="text-[36px] leading-[42px] font-semibold tracking-tight">
-                {total}
-              </div>
-            </div>
-          </>
-        ) : (
-          /* Single value display */
-          <div className="flex-1 flex flex-col items-center justify-center py-[32px] px-[16px]">
-            <div className="text-[48px] leading-[56px] font-semibold tracking-tight">
-              {total}
-            </div>
-          </div>
+    <div className={`${cardClass} hover:border-[#612bd3]/50 transition-colors`}>
+      <div className="flex items-start justify-between gap-[12px] px-[16px] pt-[14px]">
+        <span className="text-[13px] text-newTableText">{item.label}</span>
+        {item.percentageChange !== undefined && (
+          <TrendIndicator value={item.percentageChange} average={item.average} />
         )}
       </div>
+      <div className="px-[16px] text-[26px] leading-[32px] font-semibold tracking-tight">
+        {formatTotal(item)}
+      </div>
+      <div className="h-[110px] relative px-[8px] pt-[4px] pb-[8px]">
+        <ChartSocial data={item.data} average={item.average} color={color} />
+      </div>
+    </div>
+  );
+};
+
+// ranked rows with a bar: shares out of 100%, counts against the largest
+const RankedList: FC<{ item: AnalyticsDataItem }> = ({ item }) => {
+  const scale =
+    item.format === 'percent'
+      ? 100
+      : Math.max(...item.top!.map((p) => p.total), 0) || 1;
+
+  return (
+    <div className={`${cardClass} px-[16px] py-[14px] gap-[10px]`}>
+      <span className="text-[13px] text-newTableText">{item.label}</span>
+      {item.top!.map((p) => (
+        <div key={p.url || p.title} className="flex flex-col gap-[6px]">
+          <div className="flex items-center gap-[12px] text-[14px]">
+            {p.url ? (
+              <a
+                href={p.url}
+                target="_blank"
+                rel="noreferrer"
+                className="flex-1 truncate hover:text-[#612bd3] transition-colors"
+              >
+                {p.title}
+              </a>
+            ) : (
+              <span className="flex-1 truncate">{p.title}</span>
+            )}
+            <span className="font-semibold">
+              {formatValue(p.total, item.format)}
+            </span>
+          </div>
+          <div className="h-[6px] rounded-full bg-newTableBorder overflow-hidden">
+            <div
+              className="h-full rounded-full bg-[#612bd3]"
+              style={{ width: `${Math.min(100, (p.total / scale) * 100)}%` }}
+            />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+};
+
+// cards in their sections, each section laid out as number tiles, then charts,
+// then ranked lists
+export const AnalyticsGrid: FC<{ items: AnalyticsDataItem[] }> = ({
+  items,
+}) => {
+  const groups = new Map<string, AnalyticsDataItem[]>();
+  for (const item of items) {
+    groups.set(item.group || '', [...(groups.get(item.group || '') || []), item]);
+  }
+
+  return (
+    <div className="flex flex-col gap-[28px]">
+      {Array.from(groups).map(([group, list]) => {
+        const stats = list.filter((p) => !p.top && p.data.length <= 1);
+        const charts = list.filter((p) => !p.top && p.data.length > 1);
+        const lists = list.filter((p) => p.top?.length);
+
+        return (
+          <div key={group} className="flex flex-col gap-[12px]">
+            {!!group && (
+              <h3 className="text-[16px] font-semibold">{group}</h3>
+            )}
+            {!!stats.length && (
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-[12px]">
+                {stats.map((p) => (
+                  <StatTile key={p.label} item={p} />
+                ))}
+              </div>
+            )}
+            {!!charts.length && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-[16px]">
+                {charts.map((p, index) => (
+                  <ChartCard key={p.label} item={p} index={index} />
+                ))}
+              </div>
+            )}
+            {!!lists.length && (
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-[16px]">
+                {lists.map((p) => (
+                  <RankedList key={p.label} item={p} />
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 };
@@ -214,20 +297,6 @@ export const RenderAnalytics: FC<{
     []
   );
 
-  const t = useT();
-
-  const totals = useMemo(() => {
-    return data?.map((p: AnalyticsDataItem) => {
-      const value =
-        (p?.data.reduce((acc: number, curr: { total: number }) => acc + curr.total, 0) || 0) /
-        (p.average ? p.data.length : 1);
-      if (p.average) {
-        return value.toFixed(2) + '%';
-      }
-      return new Intl.NumberFormat().format(Math.round(value));
-    });
-  }, [data]);
-
   if (loading) {
     return (
       <div className="flex items-center justify-center py-[48px]">
@@ -236,19 +305,9 @@ export const RenderAnalytics: FC<{
     );
   }
 
-  return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-[16px]">
-      {data?.length === 0 && (
-        <EmptyState onRefresh={refreshChannel(integration as any)} />
-      )}
-      {data?.map((item: AnalyticsDataItem, index: number) => (
-        <AnalyticsCard
-          key={`analytics-${index}`}
-          item={item}
-          total={totals[index]}
-          index={index}
-        />
-      ))}
-    </div>
-  );
+  if (!data?.length) {
+    return <EmptyState onRefresh={refreshChannel(integration as any)} />;
+  }
+
+  return <AnalyticsGrid items={data} />;
 };

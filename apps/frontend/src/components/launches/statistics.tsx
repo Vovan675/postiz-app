@@ -2,17 +2,10 @@ import React, { FC, Fragment, useCallback, useMemo, useState } from 'react';
 import useSWR, { useSWRConfig } from 'swr';
 import { useFetch } from '@gitroom/helpers/utils/custom.fetch';
 import { useT } from '@gitroom/react/translation/get.transation.service.client';
-import { ChartSocial } from '@gitroom/frontend/components/analytics/chart-social';
 import { Select } from '@gitroom/react/form/select';
 import { LoadingComponent } from '@gitroom/frontend/components/layout/loading';
 import { MissingReleaseModal } from '@gitroom/frontend/components/launches/missing-release.modal';
-
-interface AnalyticsData {
-  label: string;
-  data: Array<{ total: number; date: string }>;
-  percentageChange: number;
-  average?: boolean;
-}
+import { AnalyticsGrid } from '@gitroom/frontend/components/platform-analytics/render.analytics';
 
 export const StatisticsModal: FC<{
   postId: string;
@@ -58,19 +51,6 @@ export const StatisticsModal: FC<{
     ];
   }, [t]);
 
-  const totals = useMemo(() => {
-    if (!analyticsData || !Array.isArray(analyticsData)) return [];
-    return analyticsData.map((p: AnalyticsData) => {
-      const value =
-        (p?.data?.reduce((acc: number, curr: any) => acc + Number(curr.total), 0) || 0) /
-        (p.average ? p.data.length : 1);
-      if (p.average) {
-        return value.toFixed(2) + '%';
-      }
-      return Math.round(value);
-    });
-  }, [analyticsData]);
-
   const isLoading = isLoadingStatistics || isLoadingAnalytics;
 
   return (
@@ -107,42 +87,8 @@ export const StatisticsModal: FC<{
                   </Select>
                 </div>
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-[16px]">
-                {analyticsData.map((p: AnalyticsData, index: number) => {
-                  const colorVariants = ['purple', 'green', 'blue'] as const;
-                  const color = colorVariants[index % colorVariants.length];
-                  return (
-                    <div key={`analytics-${index}`} className="group">
-                      <div className="flex flex-col h-full bg-newTableHeader border border-newTableBorder rounded-[12px] overflow-hidden transition-all duration-200 hover:border-[#612bd3]/50">
-                        <div className="flex items-center justify-between px-[16px] pt-[14px] pb-[8px]">
-                          <div className="flex items-center gap-[10px]">
-                            <div
-                              className={`w-[8px] h-[8px] rounded-full ${
-                                color === 'purple' ? 'bg-[#612bd3]' : ''
-                              } ${color === 'green' ? 'bg-[#32d583]' : ''} ${
-                                color === 'blue' ? 'bg-[#1d9bf0]' : ''
-                              }`}
-                            />
-                            <span className="text-[15px] font-medium text-newTableText">
-                              {p.label}
-                            </span>
-                          </div>
-                        </div>
-                        <div className="flex-1 px-[12px] py-[8px]">
-                          <div className="h-[120px] relative">
-                            <ChartSocial data={p.data} color={color} key={`chart-${index}`} />
-                          </div>
-                        </div>
-                        <div className="px-[16px] pb-[14px]">
-                          <div className="text-[36px] leading-[42px] font-semibold tracking-tight">
-                            {totals[index]}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
+              {/* keyed by range: the charts draw once, on mount */}
+              <AnalyticsGrid key={dateRange} items={analyticsData} />
             </div>
           )}
 

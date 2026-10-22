@@ -68,6 +68,10 @@ Each item has an "id", its publish date, state, error (for errored posts), conte
                   'Curated failure message for errored posts, null otherwise'
                 ),
               content: z.string(),
+              releaseURL: z
+                .string()
+                .nullable()
+                .describe('Link to the published post, null until published'),
               settings: z
                 .any()
                 .describe('The post current provider settings'),
@@ -101,6 +105,7 @@ Each item has an "id", its publish date, state, error (for errored posts), conte
               state: p.state,
               error: p.error ?? null,
               content: p.content || '',
+              releaseURL: p.releaseURL || null,
               settings: parseSettings(p.settings),
               group: p.group,
               integrationId: p.integration?.id,

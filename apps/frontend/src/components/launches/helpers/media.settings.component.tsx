@@ -9,6 +9,33 @@ import { useLaunchStore } from '@gitroom/frontend/components/new-launch/store';
 import { useVariables } from '@gitroom/react/helpers/variable.context';
 const postUrlEmitter = new EventEmitter();
 
+// Instagram covers must be JPEG and YouTube rejects thumbnails over 2MB, so
+// anything else is re-encoded (longest side capped at 1920px)
+const toThumbnailJpeg = async (blob: Blob) => {
+  if (blob.type === 'image/jpeg' && blob.size < 2 * 1024 * 1024) {
+    return blob;
+  }
+
+  const image = await createImageBitmap(blob);
+  const scale = Math.min(1, 1920 / Math.max(image.width, image.height));
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.round(image.width * scale);
+  canvas.height = Math.round(image.height * scale);
+  const ctx = canvas.getContext('2d')!;
+  // transparent PNG areas would otherwise turn black
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+
+  return new Promise<Blob>((resolve, reject) =>
+    canvas.toBlob(
+      (jpeg) => (jpeg ? resolve(jpeg) : reject(new Error('JPEG encode failed'))),
+      'image/jpeg',
+      0.9
+    )
+  );
+};
+
 export const MediaSettingsLayout = () => {
   const [showPostSelector, setShowPostSelector] = useState(false);
   const [media, setMedia] = useState(undefined);
@@ -333,7 +360,9 @@ export const MediaComponentInner: FC<{
     setLoading(true);
     let path = thumbnail || '';
     if (newThumbnail) {
-      const blob = await (await fetch(newThumbnail)).blob();
+      const blob = await toThumbnailJpeg(
+        await (await fetch(newThumbnail)).blob()
+      );
       const formData = new FormData();
       formData.append('file', blob, 'media.jpg');
       formData.append('preventSave', 'true');
@@ -411,7 +440,7 @@ export const MediaComponentInner: FC<{
                     Upload Image
                     <input
                       type="file"
-                      accept="image/jpeg"
+                      accept="image/jpeg,image/png,image/webp"
                       className="hidden"
                       disabled={loading}
                       onChange={(e) => {
